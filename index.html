@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>超频 vs 不超频：净收益计算器（自动采集版）</title>
+  <style>
+    :root{
+      --bg:#0b0f14;
+      --panel:#111926;
+      --panel-2:#0c131f;
+      --border:#1e2a3c;
+      --muted:#9fb4cf;
+      --text:#e8eef6;
+      --accent:#3a6ea8;
+      --good:#4ce38a;
+      --bad:#ff6b6b;
+      --warn:#ffd58a;
+      --radius:14px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0; background:linear-gradient(180deg,#0b0f14,#0a0e13);
+      color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    }
+    .wrap{ max-width:1200px; margin:0 auto; padding:16px; }
+    h1{ font-size:18px; margin:0 0 12px; font-weight:700; }
+
+    /* layout */
+    .grid{ display:grid; grid-template-columns:1fr; gap:14px; }
+    @media(min-width:1024px){ .grid{ grid-template-columns:1.2fr .8fr; } }
+    .subgrid{ display:grid; grid-template-columns:1fr; gap:14px; }
+    @media(min-width:1024px){ .subgrid{ grid-template-columns:1fr 1fr; } }
+
+    /* cards */
+    .card{
+      background:linear-gradient(180deg,var(--panel),#0f1622);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      padding:14px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+    }
+    .card h2{ font-size:13px; margin:0 0 10px; color:#bcd1ea; font-weight:600; }
+
+    /* form */
+    label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
+    input,select{
+      width:100%; padding:10px 12px; border-radius:12px;
+      border:1px solid #243246; background:var(--panel-2); color:var(--text);
+      outline:none; font-size:14px;
+    }
+    input:focus,select:focus{ border-color:var(--accent); box-shadow:0 0 0 2px rgba(58,110,168,.2); }
+    .row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media(max-width:520px){ .row{ grid-template-columns:1fr; } }
+
+    .hint{ font-size:12px; color:#7f97b6; line-height:1.5; margin-top:6px; }
+    .pill{ display:inline-block; padding:2px 8px; border-radius:999px; background:#0c131f; border:1px solid #243246; color:#bcd1ea; font-size:12px; }
+
+    /* buttons */
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    button{
+      padding:10px 14px; border-radius:14px; border:1px solid #243246;
+      background:linear-gradient(180deg,#101827,#0c131f);
+      color:var(--text); cursor:pointer; font-size:14px;
+    }
+    button.primary{
+      border-color:var(--accent);
+      background:linear-gradient(180deg,#173053,#12253f);
+    }
+    button:hover{ filter:brightness(1.08); }
+
+    /* status */
+    .statusline{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .badge{ padding:4px 10px; border-radius:999px; border:1px solid #243246; background:#0c131f; font-size:12px; color:#bcd1ea; }
+    .badge.ok{ border-color:#2a7a52; color:#8bf0b8; }
+    .badge.warn{ border-color:#8a6a2a; color:var(--warn); }
+    .badge.err{ border-color:#8a2a2a; color:#ff9a9a; }
+
+    /* results */
+    .results{ display:grid; grid-template-columns:1fr; gap:12px; }
+    @media(min-width:900px){ .results{ grid-template-columns:repeat(3,1fr); } }
+    .kpi{ background:var(--panel-2); border:1px solid #243246; border-radius:14px; padding:14px; }
+    .kpi .t{ font-size:12px; color:var(--muted); }
+    .kpi .v{ font-size:18px; font-weight:700; margin-top:6px; }
+    .good{ color:var(--good); }
+    .bad{ color:var(--bad); }
+
+    .divider{ height:1px; background:var(--border); margin:12px 0; }
+    .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; }
+
+    /* mobile comfort */
+    @media(max-width:520px){
+      h1{ font-size:16px; }
+      .kpi .v{ font-size:16px; }
+      button{ width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>超频 vs 不超频：净收益计算器（CNY/USD 切换 + 自动采集｜与 BTCjsq 同源）</h1>
+
+    <div class="grid">
+      <div class="subgrid">
+        <div class="card">
+          <h2>参数与自动采集</h2>
+
+          <div class="row">
+            <div>
+              <label>显示币种</label>
+              <select id="ccy">
+                <option value="USD">USD（美元）</option>
+                <option value="CNY">CNY（人民币）</option>
+              </select>
+            </div>
+            <div>
+              <label>电价（每 kWh）</label>
+              <input id="elec" type="number" step="0.0001" value="0.04" />
+              <div class="hint">切换币种后，此处单位也随之切换（USD/kWh 或 CNY/kWh）。</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>矿池费率（%）</label>
+              <input id="poolFee" type="number" step="0.01" value="2.5" />
+            </div>
+            <div>
+              <label style="display:none">收益计算方式</label>
+              <select id="yieldMode" style="display:none"></select>
+            </div>
+          </div>
+
+          <div id="manualYieldBox" style="display:none;">
+            <label>手动单T收益（每TH每天）</label>
+            <input id="manualYield" type="number" step="0.00001" value="0.05" />
+            <div class="hint">单位随币种切换：USD/TH/天 或 CNY/TH/天</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="row">
+            <div>
+              <label>区块补贴（BTC/块）</label>
+              <input id="subsidy" type="number" step="0.0001" value="3.125" />
+            </div>
+            <div>
+              <label>平均区块手续费（BTC/块）</label>
+              <input id="avgFees" type="number" step="0.0001" value="0.30" />
+            </div>
+          </div>
+          <div class="hint"><span class="pill">说明</span> 单T收益自动计算 = (你的 1TH 占全网算力比例)×(每日出块数≈144)×(补贴+平均手续费)×币价×(1-矿池费率)。手续费可手动调。</div>
+
+          <div class="divider"></div>
+
+          <div class="statusline">
+            <button class="primary" id="refresh">一键刷新链上/币价/汇率</button>
+            <label class="badge" style="cursor:pointer; user-select:none;">
+              <input id="useProxy" type="checkbox" style="vertical-align:middle; margin-right:6px;" />使用代理（救急）
+            </label>
+            <span class="badge" id="srcPrice">币价：未获取</span>
+            <span class="badge" id="srcFx">汇率：未获取</span>
+            <span class="badge" id="srcDiff">难度：未获取</span>
+            <span class="badge" id="srcHash">全网算力：计算中</span>
+          </div>
+
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label>BTC 价格（USD，自动获取）</label>
+              <input id="btcUsd" type="number" step="0.01" value="0" />
+              <div class="hint">自动填充（可手动改，手动改后会以你输入为准）。</div>
+            </div>
+            <div>
+              <label>USD/CNY 汇率</label>
+              <input id="usdCny" type="number" step="0.0001" value="0" />
+              <div class="hint">自动填充（可手动改）。</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>全网算力输入方式</label>
+              <select id="netMode">
+                <option value="auto">自动推算（由难度计算 EH/s）</option>
+                <option value="manual">手动输入（直接填 EH/s）</option>
+              </select>
+              <div class="hint">选“手动输入”后，系统不会再用难度覆盖 EH/s，你可以直接填全网算力。</div>
+            </div>
+            <div>
+              <label>单T收益输入方式</label>
+              <select id="yieldMode">
+                <option value="auto">自动计算单T收益（根据全网算力/区块奖励/币价）</option>
+                <option value="manual">手动输入单T收益（覆盖自动）</option>
+              </select>
+              <div class="hint">单T收益手动：用于对齐矿池实际 FPPS/PPS+ 结算口径。</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label>全网难度（Difficulty）</label>
+              <input id="difficulty" type="number" step="1" value="0" />
+              <div class="hint">自动填充（可手动改）。</div>
+            </div>
+            <div>
+              <label>全网算力（EH/s）</label>
+              <input id="netEH" type="number" step="0.01" value="0" />
+              <div class="hint">由难度推算：Hashrate ≈ diff×2^32/600。</div>
+            </div>
+          </div>
+
+          <div class="hint"><span class="pill">提示</span> 如果某些 API 在你所在网络不可用（跨域/被墙），你仍可手动填 BTC 价、汇率、难度，计算照样可用。</div>
+        </div>
+
+        <div class="card">
+          <h2>机器参数</h2>
+          <div class="row">
+            <div>
+              <label>不超频：算力 H0（TH/s）</label>
+              <input id="h0" type="number" step="0.01" value="340" />
+            </div>
+            <div>
+              <label>不超频：功耗 P0（kW）</label>
+              <input id="p0" type="number" step="0.01" value="5.37" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>超频：算力 H1（TH/s）</label>
+              <input id="h1" type="number" step="0.01" value="359" />
+            </div>
+            <div>
+              <label>超频：功耗 P1（kW）</label>
+              <input id="p1" type="number" step="0.01" value="6.06" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>统计周期（天）</label>
+              <input id="days" type="number" step="1" value="1" />
+            </div>
+            <div>
+              <label>是否按“有效算力”口径</label>
+              <select id="effNote" disabled>
+                <option selected>是（你已确认：矿池有效算力=结算口径）</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="btns">
+            <button id="copyLink">复制当前参数链接</button>
+            <button id="reset">恢复默认示例</button>
+          </div>
+
+          <div class="hint"><span class="pill">注意</span> 单T收益自动计算是“理论期望值”（基于全网难度/币价/奖励）。若你要对接某个矿池的 FPPS/PPS+ 实际系数，可用“矿池费率%”近似，或切换到“手动单T收益”。</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>计算结果</h2>
+
+        <div class="results">
+          <div class="kpi">
+            <div class="t">当前单T收益（自动/手动，含矿池费率）</div>
+            <div class="v mono" id="yNow">—</div>
+            <div class="small mono" id="yExplain"></div>
+          </div>
+
+          <div class="kpi">
+            <div class="t">不超频：日净收益</div>
+            <div class="v mono" id="net0">—</div>
+            <div class="small mono" id="net0d"></div>
+          </div>
+          <div class="kpi">
+            <div class="t">超频：日净收益</div>
+            <div class="v mono" id="net1">—</div>
+            <div class="small mono" id="net1d"></div>
+          </div>
+
+          <div class="kpi">
+            <div class="t">超频相对基准：日净增收益</div>
+            <div class="v mono" id="delta">—</div>
+            <div class="small" id="judge"></div>
+          </div>
+
+          <div class="kpi">
+            <div class="t">临界单T收益（同币种/TH/天）</div>
+            <div class="v mono" id="breakeven">—</div>
+            <div class="small">单T收益 ≥ 临界值 → 超频更划算</div>
+          </div>
+
+          <div class="kpi">
+            <div class="t">统计周期净增收益</div>
+            <div class="v mono" id="deltaN">—</div>
+            <div class="small mono" id="daysShow"></div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="small">
+          <div class="mono" id="debug"></div>
+          <div class="mono" id="log" style="white-space:pre-wrap; margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const isNum = (v) => Number.isFinite(v) && !Number.isNaN(v);
+
+    function getNum(id, fallback=0){
+      const el = $(id);
+      if (!el) return fallback;
+      const v = parseFloat(el.value);
+      return isNum(v) ? v : fallback;
+    }
+
+    function setBadge(el, text, cls){
+      const b = $(el);
+      if (!b) return;
+      b.textContent = text;
+      b.className = `badge ${cls || ''}`.trim();
+    }
+
+    function fmtMoney(v, ccy){
+      if (!isNum(v)) return '—';
+      const sign = v < 0 ? '-' : '';
+      const abs = Math.abs(v);
+      const sym = ccy === 'CNY' ? '¥' : '$';
+      const digits = abs >= 100 ? 2 : (abs >= 1 ? 3 : 4);
+      return sign + sym + abs.toFixed(digits);
+    }
+
+    function hashrateFromDifficulty(diff){
+      // H/s ≈ diff * 2^32 / 600
+      return diff * 4294967296 / 600;
+    }
+
+    function setYieldModeUI(){
+      const m = $('yieldMode')?.value || 'auto';
+      const box = $('manualYieldBox');
+      if (box) box.style.display = (m === 'manual') ? 'block' : 'none';
+      calc();
+    }
+
+    function calc(){
+      const ccy = $('ccy')?.value || 'USD';
+      const E = getNum('elec', 0); // selected currency per kWh
+      const poolFeePct = getNum('poolFee', 0);
+      const poolFee = Math.max(0, Math.min(100, poolFeePct)) / 100;
+
+      const H0 = getNum('h0', 0);
+      const P0 = getNum('p0', 0);
+      const H1 = getNum('h1', 0);
+      const P1 = getNum('p1', 0);
+      const days = Math.max(1, Math.round(getNum('days', 1)));
+
+      const btcUsd = getNum('btcUsd', 0);
+      const usdCny = getNum('usdCny', 0);
+      const diff = getNum('difficulty', 0);
+      const netMode = $('netMode')?.value || 'auto';
+
+      // net EH/s: auto from difficulty OR manual input
+      let netEH = getNum('netEH', 0);
+      if (netMode === 'auto'){
+        if (diff > 0){
+          netEH = hashrateFromDifficulty(diff) / 1e18;
+          const netEl = $('netEH');
+          if (netEl) netEl.value = netEH.toFixed(2);
+        }
+      }
+
+      const btcPrice = (ccy === 'CNY') ? (btcUsd > 0 && usdCny > 0 ? btcUsd * usdCny : 0) : btcUsd;
+
+      // yield money per TH per day
+      let yMoney = NaN;
+      let explain = '';
+
+      const mode = $('yieldMode')?.value || 'auto';
+      if (mode === 'manual'){
+        yMoney = getNum('manualYield', 0);
+        explain = '手动单T收益（覆盖自动）';
+      } else {
+        const subsidy = Math.max(0, getNum('subsidy', 0));
+        const avgFees = Math.max(0, getNum('avgFees', 0));
+        const rewardPerBlock = subsidy + avgFees;
+        const blocksPerDay = 144;
+
+        if ((netMode === 'auto' ? diff > 0 : netEH > 0) && btcPrice > 0 && rewardPerBlock > 0){
+          const netHash = (netMode === 'auto') ? hashrateFromDifficulty(diff) : (netEH * 1e18);
+          const my1TH = 1e12;
+          const btcPerTHDay = (my1TH / netHash) * blocksPerDay * rewardPerBlock;
+          yMoney = btcPerTHDay * btcPrice * (1 - poolFee);
+          explain = `自动：BTC/TH/天≈${btcPerTHDay.toExponential(3)}；价格(${ccy})×(1-费率)`;
+        } else {
+          explain = (netMode === 'auto')
+            ? '自动模式需要：难度、BTC价格（CNY 还需 USD/CNY），以及区块收益参数。'
+            : '自动模式需要：全网算力(EH/s)、BTC价格（CNY 还需 USD/CNY），以及区块收益参数。';
+        }
+      }
+
+      // revenue and costs
+      const rev0 = isNum(yMoney) ? H0 * yMoney : NaN;
+      const rev1 = isNum(yMoney) ? H1 * yMoney : NaN;
+
+      const cost0 = P0 * 24 * E;
+      const cost1 = P1 * 24 * E;
+
+      const net0 = (isNum(rev0) ? (rev0 - cost0) : NaN);
+      const net1 = (isNum(rev1) ? (rev1 - cost1) : NaN);
+      const delta = (isNum(net0) && isNum(net1)) ? (net1 - net0) : NaN;
+      const deltaN = isNum(delta) ? delta * days : NaN;
+
+      const dH = (H1 - H0);
+      const dP = (P1 - P0);
+      let yBe = NaN;
+      if (Math.abs(dH) > 1e-12){
+        yBe = (dP * 24 * E) / dH;
+      }
+
+      const yNow = $('yNow');
+      const yExplain = $('yExplain');
+      if (yNow) yNow.textContent = isNum(yMoney) ? `${fmtMoney(yMoney, ccy)} /TH/天` : '—';
+      if (yExplain) yExplain.textContent = explain;
+
+      const n0 = $('net0');
+      const n1 = $('net1');
+      const n0d = $('net0d');
+      const n1d = $('net1d');
+      if (n0) n0.textContent = isNum(net0) ? fmtMoney(net0, ccy) : '—';
+      if (n1) n1.textContent = isNum(net1) ? fmtMoney(net1, ccy) : '—';
+
+      const kwh0 = (P0 * 24);
+      const kwh1 = (P1 * 24);
+      if (n0d) n0d.textContent = isNum(rev0)
+        ? `毛收益=${fmtMoney(rev0, ccy)}，电费=${fmtMoney(cost0, ccy)}（${kwh0.toFixed(2)} kWh/天）`
+        : `电费=${fmtMoney(cost0, ccy)}（${kwh0.toFixed(2)} kWh/天）`;
+      if (n1d) n1d.textContent = isNum(rev1)
+        ? `毛收益=${fmtMoney(rev1, ccy)}，电费=${fmtMoney(cost1, ccy)}（${kwh1.toFixed(2)} kWh/天）`
+        : `电费=${fmtMoney(cost1, ccy)}（${kwh1.toFixed(2)} kWh/天）`;
+
+      const dEl = $('delta');
+      if (dEl){
+        dEl.textContent = isNum(delta) ? fmtMoney(delta, ccy) : '—';
+        dEl.className = 'v mono ' + (isNum(delta) ? (delta >= 0 ? 'good' : 'bad') : '');
+      }
+
+      const judge = $('judge');
+      if (judge){
+        if (!isNum(delta)){
+          judge.textContent = '请先获取（或手动填写）难度与币价/汇率，或切换到手动单T收益。';
+          judge.className = 'small warn';
+        } else if (delta > 0){
+          judge.textContent = '结论：超频更划算（净收益更高）';
+          judge.className = 'small good';
+        } else if (delta < 0){
+          judge.textContent = '结论：不超频更划算（超频会降低净收益）';
+          judge.className = 'small bad';
+        } else {
+          judge.textContent = '结论：两者打平';
+          judge.className = 'small';
+        }
+      }
+
+      const be = $('breakeven');
+      if (be) be.textContent = isNum(yBe) ? `${fmtMoney(yBe, ccy)} /TH/天` : '—';
+
+      const dN = $('deltaN');
+      if (dN) dN.textContent = isNum(deltaN) ? fmtMoney(deltaN, ccy) : '—';
+
+      const ds = $('daysShow');
+      if (ds) ds.textContent = `按 ${days} 天统计：日净增×天数`;
+
+      const dbg = $('debug');
+      if (dbg){
+        const parts = [];
+        parts.push(`CCY=${ccy}`);
+        parts.push(`Elec=${E}(${ccy}/kWh)`);
+        parts.push(`PoolFee=${(poolFee*100).toFixed(2)}%`);
+        parts.push(`BTCUSD=${btcUsd || 0}`);
+        parts.push(`USDCNY=${usdCny || 0}`);
+        parts.push(`NetMode=${netMode}`);
+        parts.push(`Diff=${diff || 0}`);
+        parts.push(`NetEH=${netEH || 0}`);
+        dbg.textContent = parts.join('  |  ');
+      }
+    }
+
+    // --- Fetch helpers with timeout (avoid hanging) ---
+    async function fetchWithTimeout(url, ms=8000){
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      try{
+        return await fetch(url, {
+          cache: 'no-store',
+          signal: ctrl.signal,
+          referrerPolicy: 'no-referrer'
+        });
+      } finally {
+        clearTimeout(t);
+      }
+    }
+
+    // --- Proxy helpers (GitHub Pages friendly) ---
+    function useProxyFirst(){ return !!$('useProxy')?.checked; }
+
+    function buildProxyCandidates(url){
+      const enc = encodeURIComponent(url);
+      return [
+        url,
+        `https://api.allorigins.win/raw?url=${enc}`,
+        `https://corsproxy.io/?${enc}`
+      ];
+    }
+
+    async function fetchAny(url, ms=8000){
+      const cands = buildProxyCandidates(url);
+      const order = useProxyFirst() ? [1,2,0] : [0,1,2];
+      let lastErr = null;
+      for (const idx of order){
+        const u = cands[idx];
+        try{
+          const r = await fetchWithTimeout(u, ms);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return { r, via: idx === 0 ? 'direct' : (idx === 1 ? 'allorigins' : 'corsproxy') };
+        } catch(e){
+          lastErr = e;
+        }
+      }
+      throw lastErr || new Error('fetch failed');
+    }
+
+    function logLine(msg){
+      const el = $('log');
+      if (!el) return;
+      const now = new Date();
+      const ts = now.toLocaleTimeString();
+      el.textContent = `${ts}  ${msg}
+` + (el.textContent || '');
+    }
+
+    // --- Auto data sources (SAME as BTCjsq: GitHub Pages compatible) ---
+    async function fetchBTCPrice(){
+      // 多源 + 代理兜底（不绑定单一来源）
+      const sources = [
+        { name:'Coinbase', url:'https://api.coinbase.com/v2/prices/spot?currency=USD', pick:(j)=>parseFloat(j?.data?.amount) },
+        { name:'CoinGecko', url:'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', pick:(j)=>parseFloat(j?.bitcoin?.usd) },
+        { name:'CoinCap', url:'https://api.coincap.io/v2/assets/bitcoin', pick:(j)=>parseFloat(j?.data?.priceUsd) }
+      ];
+      let last = null;
+      for (const s of sources){
+        try{
+          const { r, via } = await fetchAny(s.url);
+          const j = await r.json();
+          const p = s.pick(j);
+          if(!isNum(p) || p<=0) throw new Error('bad price');
+          return { price: p, src: `${s.name} (${via})` };
+        } catch(e){
+          last = e;
+          logLine(`Price 获取失败：${s.name} (${e?.message || e})`);
+        }
+      }
+      throw last || new Error('all price sources failed');
+    }
+
+    async function fetchUSDCNY(){
+      // 多源 + 代理兜底
+      const sources = [
+        { name: 'exchangerate.host', url: 'https://api.exchangerate.host/latest?base=USD&symbols=CNY', pick: (j)=>j?.rates?.CNY },
+        { name: 'ERAPI', url: 'https://open.er-api.com/v6/latest/USD', pick: (j)=>j?.rates?.CNY },
+        { name: 'Frankfurter', url: 'https://api.frankfurter.app/latest?from=USD&to=CNY', pick: (j)=>j?.rates?.CNY }
+      ];
+      let last = null;
+      for (const s of sources){
+        try{
+          const { r, via } = await fetchAny(s.url);
+          const j = await r.json();
+          const v = parseFloat(s.pick(j));
+          if(!isNum(v) || v<=0) throw new Error('bad fx');
+          return { rate: v, src: `${s.name} (${via})` };
+        } catch(e){
+          last = e;
+          logLine(`FX 获取失败：${s.name} (${e?.message || e})`);
+        }
+      }
+      throw last || new Error('all fx sources failed');
+    }
+
+    async function fetchDifficulty(){
+      // 多源 + 代理兜底
+      const sources = [
+        { name:'mempool.space', url:'https://mempool.space/api/v1/mining/difficulty-adjustment', type:'json', pick:(j)=>j?.difficulty },
+        { name:'blockchain.info', url:'https://blockchain.info/q/getdifficulty?cors=true', type:'text', pick:(t)=>parseFloat(t) },
+        { name:'Blockchair', url:'https://api.blockchair.com/bitcoin/stats', type:'json', pick:(j)=>j?.data?.difficulty },
+        { name:'BlockCypher', url:'https://api.blockcypher.com/v1/btc/main', type:'json', pick:(j)=>j?.difficulty }
+      ];
+      let last = null;
+      for (const s of sources){
+        try{
+          const { r, via } = await fetchAny(s.url);
+          let d;
+          if (s.type === 'text'){
+            const t = await r.text();
+            d = s.pick(t);
+          } else {
+            const j = await r.json();
+            d = s.pick(j);
+          }
+          d = parseFloat(d);
+          if(!isNum(d) || d<=0) throw new Error('bad diff');
+          return { diff: d, src: `${s.name} (${via})` };
+        } catch(e){
+          last = e;
+          logLine(`Diff 获取失败：${s.name} (${e?.message || e})`);
+        }
+      }
+      throw last || new Error('all diff sources failed');
+    }
+
+    async function refreshAuto(){
+      logLine('开始刷新…（失败可勾选“使用代理（救急）”再试）');
+
+      // PRICE
+      try{
+        const {price, src} = await fetchBTCPrice();
+        if(!(getNum('btcUsd',0) > 0)) $('btcUsd').value = price.toFixed(2);
+        setBadge('srcPrice', `币价：${src}`, 'ok');
+      } catch(e){
+        setBadge('srcPrice', '币价：自动获取失败（可手动填）', 'err');
+        logLine(`Price 最终失败：${e?.message || e}`);
+      }
+
+      // FX
+      try{
+        const {rate, src} = await fetchUSDCNY();
+        if(!(getNum('usdCny',0) > 0)) $('usdCny').value = rate.toFixed(4);
+        setBadge('srcFx', `汇率：${src}`, 'ok');
+      } catch(e){
+        setBadge('srcFx', '汇率：自动获取失败（可手动填）', 'err');
+        logLine(`FX 最终失败：${e?.message || e}`);
+      }
+
+      // DIFFICULTY
+      try{
+        const {diff, src} = await fetchDifficulty();
+        if(!(getNum('difficulty',0) > 0)) $('difficulty').value = Math.round(diff);
+        setBadge('srcDiff', `难度：${src}`, 'ok');
+        setBadge('srcHash', '全网算力：由难度推算', 'ok');
+      } catch(e){
+        setBadge('srcDiff', '难度：自动获取失败（可手动填）', 'err');
+        setBadge('srcHash', '全网算力：需难度', 'warn');
+        logLine(`Diff 最终失败：${e?.message || e}`);
+      }
+
+      calc();
+    }
+
+    function resetDefaults(){
+      $('ccy').value = 'USD';
+      $('elec').value = '0.04';
+      $('poolFee').value = '2.5';
+      $('yieldMode').value = 'auto';
+      $('manualYield').value = '0.05';
+
+      $('subsidy').value = '3.125';
+      $('avgFees').value = '0.30';
+
+      $('h0').value = '340';
+      $('p0').value = '5.37';
+      $('h1').value = '359';
+      $('p1').value = '6.06';
+      $('days').value = '1';
+
+      $('btcUsd').value = '0';
+      $('usdCny').value = '0';
+      $('difficulty').value = '0';
+      $('netEH').value = '0';
+      if ($('netMode')) $('netMode').value = 'auto';
+
+      setBadge('srcPrice', '币价：未获取', '');
+      setBadge('srcFx', '汇率：未获取', '');
+      setBadge('srcDiff', '难度：未获取', '');
+      setBadge('srcHash', '全网算力：计算中', '');
+
+      setYieldModeUI();
+      calc();
+    }
+
+    function copyLink(){
+      const keys = ['ccy','elec','poolFee','netMode','yieldMode','manualYield','subsidy','avgFees','h0','p0','h1','p1','days','btcUsd','usdCny','difficulty','netEH'];
+      const p = new URLSearchParams();
+      keys.forEach(k => p.set(k, $(k)?.value ?? ''));
+      const url = location.origin + location.pathname + '?' + p.toString();
+      navigator.clipboard.writeText(url).then(() => {
+        alert('已复制链接（可分享/收藏）：\n' + url);
+      }).catch(() => {
+        prompt('复制失败，请手动复制：', url);
+      });
+    }
+
+    function readParams(){
+      const p = new URLSearchParams(location.search);
+      const keys = ['ccy','elec','poolFee','netMode','yieldMode','manualYield','subsidy','avgFees','h0','p0','h1','p1','days','btcUsd','usdCny','difficulty','netEH'];
+      keys.forEach(k => { if (p.has(k) && $(k)) $(k).value = p.get(k); });
+    }
+
+    // --- Simple self-tests (console) ---
+    function runTests(){
+      // Test 1: manual yield, zero electricity => delta should equal (H1-H0)*Y
+      const saved = {
+        yieldMode: $('yieldMode').value,
+        manualYield: $('manualYield').value,
+        elec: $('elec').value,
+        h0: $('h0').value,
+        h1: $('h1').value,
+        p0: $('p0').value,
+        p1: $('p1').value,
+        ccy: $('ccy').value,
+      };
+
+      $('ccy').value = 'USD';
+      $('yieldMode').value = 'manual';
+      $('manualYield').value = '1';
+      $('elec').value = '0';
+      $('h0').value = '340';
+      $('h1').value = '359';
+      $('p0').value = '5.37';
+      $('p1').value = '6.06';
+      setYieldModeUI();
+      calc();
+
+      const expectedDelta = (359 - 340) * 1;
+      // Parse displayed delta
+      const deltaText = ($('delta').textContent || '').replace(/[^0-9.\-]/g,'');
+      const deltaVal = parseFloat(deltaText);
+      console.assert(Math.abs(deltaVal - expectedDelta) < 1e-6, 'Test1 failed: delta mismatch', {deltaVal, expectedDelta});
+
+      // Restore
+      $('yieldMode').value = saved.yieldMode;
+      $('manualYield').value = saved.manualYield;
+      $('elec').value = saved.elec;
+      $('h0').value = saved.h0;
+      $('h1').value = saved.h1;
+      $('p0').value = saved.p0;
+      $('p1').value = saved.p1;
+      $('ccy').value = saved.ccy;
+      setYieldModeUI();
+      calc();
+    }
+
+    // events
+    ['ccy','elec','poolFee','netMode','yieldMode','manualYield','subsidy','avgFees','h0','p0','h1','p1','days','btcUsd','usdCny','difficulty','netEH']
+      .forEach(id => $(id)?.addEventListener('input', calc));
+
+    $('yieldMode')?.addEventListener('change', setYieldModeUI);
+    $('netMode')?.addEventListener('change', () => { calc(); });
+    $('refresh')?.addEventListener('click', refreshAuto);
+    $('reset')?.addEventListener('click', resetDefaults);
+    $('copyLink')?.addEventListener('click', copyLink);
+
+    // init
+    readParams();
+    setYieldModeUI();
+    calc();
+    calc();
+    refreshAuto();
+    runTests();
+  </script>
+</body>
+</html>
