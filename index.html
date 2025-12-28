@@ -89,6 +89,11 @@
     .divider{ height:1px; background:var(--border); margin:12px 0; }
     .mono{ font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; }
 
+    /* lock/unlock for manual yield */
+    .locked{ opacity:.7; }
+    .locked input{ cursor:not-allowed; background:#0a111b; }
+    .highlight{ border-color:var(--accent) !important; box-shadow:0 0 0 2px rgba(58,110,168,.18) !important; }
+
     /* mobile comfort */
     @media(max-width:520px){
       h1{ font-size:16px; }
@@ -127,15 +132,19 @@
               <input id="poolFee" type="number" step="0.01" value="2.5" />
             </div>
             <div>
-              <label style="display:none">收益计算方式</label>
-              <select id="yieldMode" style="display:none"></select>
+              <label>单T收益输入方式</label>
+              <select id="yieldMode">
+                <option value="auto">自动计算单T收益（根据全网算力/区块奖励/币价）</option>
+                <option value="manual">手动输入单T收益（锁定口径）</option>
+              </select>
+              <div class="hint">推荐：对齐矿池实际 FPPS/PPS+ 结算口径时选“手动”。</div>
             </div>
           </div>
 
-          <div id="manualYieldBox" style="display:none;">
+          <div id="manualYieldBox">
             <label>手动单T收益（每TH每天）</label>
             <input id="manualYield" type="number" step="0.00001" value="0.05" />
-            <div class="hint">单位随币种切换：USD/TH/天 或 CNY/TH/天</div>
+            <div class="hint" id="manualYieldHint">当选择“自动计算”时该输入框会锁定；选择“手动输入”时才会生效。</div>
           </div>
 
           <div class="divider"></div>
@@ -150,7 +159,7 @@
               <input id="avgFees" type="number" step="0.0001" value="0.30" />
             </div>
           </div>
-          <div class="hint"><span class="pill">说明</span> 单T收益自动计算 = (你的 1TH 占全网算力比例)×(每日出块数≈144)×(补贴+平均手续费)×币价×(1-矿池费率)。手续费可手动调。</div>
+          <div class="hint"><span class="pill">说明</span> 单T收益自动计算 = (你的 1TH 占全网算力比例)×(每日出块数≈144)×(补贴+平均手续费)×币价×(1-矿池费率)。</div>
 
           <div class="divider"></div>
 
@@ -188,12 +197,9 @@
               <div class="hint">选“手动输入”后，系统不会再用难度覆盖 EH/s，你可以直接填全网算力。</div>
             </div>
             <div>
-              <label>单T收益输入方式</label>
-              <select id="yieldMode">
-                <option value="auto">自动计算单T收益（根据全网算力/区块奖励/币价）</option>
-                <option value="manual">手动输入单T收益（覆盖自动）</option>
-              </select>
-              <div class="hint">单T收益手动：用于对齐矿池实际 FPPS/PPS+ 结算口径。</div>
+              <label>全网算力（EH/s）</label>
+              <input id="netEH" type="number" step="0.01" value="0" />
+              <div class="hint">自动模式下会由难度推算覆盖；手动模式下以你填写为准。</div>
             </div>
           </div>
 
@@ -204,13 +210,13 @@
               <div class="hint">自动填充（可手动改）。</div>
             </div>
             <div>
-              <label>全网算力（EH/s）</label>
-              <input id="netEH" type="number" step="0.01" value="0" />
-              <div class="hint">由难度推算：Hashrate ≈ diff×2^32/600。</div>
+              <label>（推算公式）</label>
+              <input type="text" value="Hashrate ≈ diff×2^32/600" disabled />
+              <div class="hint">EH/s = H/s ÷ 1e18</div>
             </div>
           </div>
 
-          <div class="hint"><span class="pill">提示</span> 如果某些 API 在你所在网络不可用（跨域/被墙），你仍可手动填 BTC 价、汇率、难度，计算照样可用。</div>
+          <div class="hint"><span class="pill">提示</span> 如果某些 API 在你所在网络不可用（跨域/被墙），你仍可手动填 BTC 价、汇率、难度/全网算力，计算照样可用。</div>
         </div>
 
         <div class="card">
@@ -253,7 +259,7 @@
             <button id="reset">恢复默认示例</button>
           </div>
 
-          <div class="hint"><span class="pill">注意</span> 单T收益自动计算是“理论期望值”（基于全网难度/币价/奖励）。若你要对接某个矿池的 FPPS/PPS+ 实际系数，可用“矿池费率%”近似，或切换到“手动单T收益”。</div>
+          <div class="hint"><span class="pill">注意</span> 自动单T收益是“理论期望值”。对接矿池 FPPS/PPS+ 的实际口径建议选“手动单T收益”。</div>
         </div>
       </div>
 
@@ -339,9 +345,23 @@
     }
 
     function setYieldModeUI(){
-      const m = $('yieldMode')?.value || 'auto';
+      const mode = $('yieldMode')?.value || 'auto';
       const box = $('manualYieldBox');
-      if (box) box.style.display = (m === 'manual') ? 'block' : 'none';
+      const inp = $('manualYield');
+      const hint = $('manualYieldHint');
+      if (!box || !inp) { calc(); return; }
+
+      const isManual = mode === 'manual';
+      inp.disabled = !isManual;
+      box.classList.toggle('locked', !isManual);
+      inp.classList.toggle('highlight', isManual);
+
+      if (hint){
+        hint.textContent = isManual
+          ? '当前为【手动口径】：直接使用你输入的单T收益（不依赖难度/算力/币价自动推算）。'
+          : '当前为【自动口径】：单T收益将由全网算力/难度/币价/区块收益计算；此输入框已锁定。';
+      }
+
       calc();
     }
 
@@ -423,7 +443,10 @@
       const yNow = $('yNow');
       const yExplain = $('yExplain');
       if (yNow) yNow.textContent = isNum(yMoney) ? `${fmtMoney(yMoney, ccy)} /TH/天` : '—';
-      if (yExplain) yExplain.textContent = explain;
+      if (yExplain){
+        const modeTag = mode === 'manual' ? '【手动口径】' : '【自动口径】';
+        yExplain.textContent = modeTag + ' ' + explain;
+      }
 
       const n0 = $('net0');
       const n1 = $('net1');
@@ -535,15 +558,13 @@
     function logLine(msg){
       const el = $('log');
       if (!el) return;
-      const now = new Date();
-      const ts = now.toLocaleTimeString();
-      el.textContent = `${ts}  ${msg}
-` + (el.textContent || '');
+      const ts = new Date().toLocaleTimeString();
+      // IMPORTANT: don't place raw newlines inside template literals (can break some HTML generators)
+      el.textContent = `${ts}  ${msg}\n` + (el.textContent || '');
     }
 
-    // --- Auto data sources (SAME as BTCjsq: GitHub Pages compatible) ---
+    // --- Auto data sources (GitHub Pages compatible) ---
     async function fetchBTCPrice(){
-      // 多源 + 代理兜底（不绑定单一来源）
       const sources = [
         { name:'Coinbase', url:'https://api.coinbase.com/v2/prices/spot?currency=USD', pick:(j)=>parseFloat(j?.data?.amount) },
         { name:'CoinGecko', url:'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', pick:(j)=>parseFloat(j?.bitcoin?.usd) },
@@ -566,7 +587,6 @@
     }
 
     async function fetchUSDCNY(){
-      // 多源 + 代理兜底
       const sources = [
         { name: 'exchangerate.host', url: 'https://api.exchangerate.host/latest?base=USD&symbols=CNY', pick: (j)=>j?.rates?.CNY },
         { name: 'ERAPI', url: 'https://open.er-api.com/v6/latest/USD', pick: (j)=>j?.rates?.CNY },
@@ -589,7 +609,6 @@
     }
 
     async function fetchDifficulty(){
-      // 多源 + 代理兜底
       const sources = [
         { name:'mempool.space', url:'https://mempool.space/api/v1/mining/difficulty-adjustment', type:'json', pick:(j)=>j?.difficulty },
         { name:'blockchain.info', url:'https://blockchain.info/q/getdifficulty?cors=true', type:'text', pick:(t)=>parseFloat(t) },
@@ -622,7 +641,6 @@
     async function refreshAuto(){
       logLine('开始刷新…（失败可勾选“使用代理（救急）”再试）');
 
-      // PRICE
       try{
         const {price, src} = await fetchBTCPrice();
         if(!(getNum('btcUsd',0) > 0)) $('btcUsd').value = price.toFixed(2);
@@ -632,7 +650,6 @@
         logLine(`Price 最终失败：${e?.message || e}`);
       }
 
-      // FX
       try{
         const {rate, src} = await fetchUSDCNY();
         if(!(getNum('usdCny',0) > 0)) $('usdCny').value = rate.toFixed(4);
@@ -642,7 +659,6 @@
         logLine(`FX 最终失败：${e?.message || e}`);
       }
 
-      // DIFFICULTY
       try{
         const {diff, src} = await fetchDifficulty();
         if(!(getNum('difficulty',0) > 0)) $('difficulty').value = Math.round(diff);
@@ -707,8 +723,8 @@
     }
 
     // --- Simple self-tests (console) ---
+    // Keep existing test, add more tests (no UI changes, just console assertions)
     function runTests(){
-      // Test 1: manual yield, zero electricity => delta should equal (H1-H0)*Y
       const saved = {
         yieldMode: $('yieldMode').value,
         manualYield: $('manualYield').value,
@@ -718,26 +734,52 @@
         p0: $('p0').value,
         p1: $('p1').value,
         ccy: $('ccy').value,
+        poolFee: $('poolFee').value,
       };
 
+      // Test 1: delta = (H1-H0)*y - (P1-P0)*24*E ; set E=0 and y=1 => delta=(H1-H0)
       $('ccy').value = 'USD';
       $('yieldMode').value = 'manual';
+      setYieldModeUI();
       $('manualYield').value = '1';
       $('elec').value = '0';
+      $('poolFee').value = '0';
       $('h0').value = '340';
       $('h1').value = '359';
       $('p0').value = '5.37';
       $('p1').value = '6.06';
-      setYieldModeUI();
       calc();
-
       const expectedDelta = (359 - 340) * 1;
-      // Parse displayed delta
       const deltaText = ($('delta').textContent || '').replace(/[^0-9.\-]/g,'');
       const deltaVal = parseFloat(deltaText);
       console.assert(Math.abs(deltaVal - expectedDelta) < 1e-6, 'Test1 failed: delta mismatch', {deltaVal, expectedDelta});
 
-      // Restore
+      // Test 2: manual mode unlocks input, auto mode locks it
+      $('yieldMode').value = 'manual';
+      setYieldModeUI();
+      console.assert($('manualYield').disabled === false, 'Test2 failed: manualYield should be enabled in manual mode');
+      $('yieldMode').value = 'auto';
+      setYieldModeUI();
+      console.assert($('manualYield').disabled === true, 'Test2 failed: manualYield should be disabled in auto mode');
+
+      // Test 3: breakeven yBe = dP*24*E / dH
+      $('yieldMode').value = 'manual';
+      setYieldModeUI();
+      $('manualYield').value = '0';
+      $('elec').value = '0.04';
+      $('h0').value = '340';
+      $('h1').value = '359';
+      $('p0').value = '5.37';
+      $('p1').value = '6.06';
+      calc();
+      const dH = (359-340);
+      const dP = (6.06-5.37);
+      const yBe = (dP*24*0.04)/dH;
+      const beText = ($('breakeven').textContent || '').replace(/[^0-9.\-]/g,'');
+      const beVal = parseFloat(beText);
+      console.assert(Math.abs(beVal - yBe) < 1e-6, 'Test3 failed: breakeven mismatch', {beVal, yBe});
+
+      // restore
       $('yieldMode').value = saved.yieldMode;
       $('manualYield').value = saved.manualYield;
       $('elec').value = saved.elec;
@@ -746,12 +788,13 @@
       $('p0').value = saved.p0;
       $('p1').value = saved.p1;
       $('ccy').value = saved.ccy;
+      $('poolFee').value = saved.poolFee;
       setYieldModeUI();
       calc();
     }
 
     // events
-    ['ccy','elec','poolFee','netMode','yieldMode','manualYield','subsidy','avgFees','h0','p0','h1','p1','days','btcUsd','usdCny','difficulty','netEH']
+    ['ccy','elec','poolFee','netMode','manualYield','subsidy','avgFees','h0','p0','h1','p1','days','btcUsd','usdCny','difficulty','netEH']
       .forEach(id => $(id)?.addEventListener('input', calc));
 
     $('yieldMode')?.addEventListener('change', setYieldModeUI);
@@ -763,7 +806,6 @@
     // init
     readParams();
     setYieldModeUI();
-    calc();
     calc();
     refreshAuto();
     runTests();
